@@ -1,0 +1,51 @@
+{
+  "name": "backend",
+  "version": "0.1.0",
+  "private": true,
+  "description": "DocuCollab Strapi v5 Backend",
+  "scripts": {
+    "build": "strapi build",
+    "console": "strapi console",
+    "deploy": "strapi deploy",
+    "dev": "strapi develop",
+    "develop": "strapi develop",
+    "start": "strapi start",
+    "strapi": "strapi",
+    "socket": "node src/socket/server.js"
+  },
+  "dependencies": {
+    "@strapi/plugin-cloud": "5.40.0",
+    "@strapi/plugin-users-permissions": "^5.40.0",
+    "@strapi/provider-upload-cloudinary": "^5.40.0",
+    "@strapi/strapi": "5.40.0",
+    "better-sqlite3": "12.6.2",
+    "cloudinary": "^2.5.1",
+    "multer": "^1.4.5-lts.1",
+    "pdf-lib": "^1.17.1",
+    "react": "^18.0.0",
+    "react-dom": "^18.0.0",
+    "react-router-dom": "^6.0.0",
+    "socket.io": "^4.8.3",
+    "styled-components": "^6.0.0",
+    "uuid": "^11.0.3",
+    "nodemailer": "^6.9.16"
+  },
+  "devDependencies": {
+    "@strapi/typescript-utils": "^5.40.0",
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^20.19.37",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "@types/uuid": "^10.0.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.3.3"
+  },
+  "engines": {
+    "node": ">=20.0.0 <=24.x.x",
+    "npm": ">=6.0.0"
+  },
+  "strapi": {
+    "uuid": "d498a521-f7b1-4a54-88f8-3d68e7f41010",
+    "installId": "40e22f9afeb500b7cd43687da7d9dd137188d67208e14e9e22b74d972700fe6e"
+  }
+}

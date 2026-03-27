@@ -1,0 +1,46 @@
+{
+  "kind": "collectionType",
+  "collectionName": "audit_logs",
+  "info": {
+    "singularName": "audit-log",
+    "pluralName": "audit-logs",
+    "displayName": "Audit Log",
+    "description": "Track all document actions"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "attributes": {
+    "action": {
+      "type": "enumeration",
+      "enum": [
+        "created", "viewed", "edited", "signed",
+        "invited", "joined", "exported", "rolled_back", "status_changed"
+      ],
+      "required": true
+    },
+    "actorEmail": {
+      "type": "string"
+    },
+    "actorName": {
+      "type": "string"
+    },
+    "metadata": {
+      "type": "json"
+    },
+    "ipAddress": {
+      "type": "string"
+    },
+    "document": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::document.document",
+      "inversedBy": "auditLogs"
+    },
+    "actor": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    }
+  }
+}

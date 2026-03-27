@@ -1,0 +1,46 @@
+{
+  "kind": "collectionType",
+  "collectionName": "collaborators",
+  "info": {
+    "singularName": "collaborator",
+    "pluralName": "collaborators",
+    "displayName": "Collaborator",
+    "description": "Document collaborators with roles"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "attributes": {
+    "email": {
+      "type": "email",
+      "required": true
+    },
+    "role": {
+      "type": "enumeration",
+      "enum": ["viewer", "editor", "signer", "admin"],
+      "default": "viewer"
+    },
+    "status": {
+      "type": "enumeration",
+      "enum": ["pending", "accepted", "declined"],
+      "default": "pending"
+    },
+    "document": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "api::document.document",
+      "inversedBy": "collaborators"
+    },
+    "user": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "invitedAt": {
+      "type": "datetime"
+    },
+    "acceptedAt": {
+      "type": "datetime"
+    }
+  }
+}

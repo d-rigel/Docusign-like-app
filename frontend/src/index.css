@@ -1,0 +1,42 @@
+/* src/index.css */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body, #root {
+  height: 100%;
+  background: #f8f7f4;
+  font-family: 'Plus Jakarta Sans', sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Quill editor customisation */
+.ql-container {
+  font-family: 'Lora', serif !important;
+  font-size: 16px !important;
+  border: none !important;
+}
+.ql-toolbar.ql-snow {
+  border: none !important;
+  border-bottom: 1px solid #e5e7eb !important;
+  background: #fafafa;
+  padding: 8px 12px !important;
+}
+.ql-editor {
+  min-height: 500px;
+  padding: 40px 60px !important;
+  line-height: 1.9 !important;
+  color: #1a1a2e;
+}
+.ql-editor:focus { outline: none; }
+.ql-editor p { margin-bottom: 12px; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
+
+/* Signature canvas */
+.signature-canvas { cursor: crosshair; }
+
+/* Collaborator cursor colours */
+.collab-cursor { position: absolute; width: 2px; pointer-events: none; z-index: 99; }

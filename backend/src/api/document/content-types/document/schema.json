@@ -1,0 +1,75 @@
+{
+  "kind": "collectionType",
+  "collectionName": "documents",
+  "info": {
+    "singularName": "document",
+    "pluralName": "documents",
+    "displayName": "Document",
+    "description": "Collaborative documents with versioning"
+  },
+  "options": {
+    "draftAndPublish": false
+  },
+  "pluginOptions": {},
+  "attributes": {
+    "title": {
+      "type": "string",
+      "required": true,
+      "maxLength": 255
+    },
+    "content": {
+      "type": "richtext"
+    },
+    "plainContent": {
+      "type": "text"
+    },
+    "status": {
+      "type": "enumeration",
+      "enum": ["draft", "review", "signed", "completed", "archived"],
+      "default": "draft"
+    },
+    "owner": {
+      "type": "relation",
+      "relation": "manyToOne",
+      "target": "plugin::users-permissions.user"
+    },
+    "collaborators": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::collaborator.collaborator",
+      "mappedBy": "document"
+    },
+    "signatures": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::signature.signature",
+      "mappedBy": "document"
+    },
+    "auditLogs": {
+      "type": "relation",
+      "relation": "oneToMany",
+      "target": "api::audit-log.audit-log",
+      "mappedBy": "document"
+    },
+    "originalFile": {
+      "type": "media",
+      "multiple": false,
+      "required": false,
+      "allowedTypes": ["files", "images"]
+    },
+    "versions": {
+      "type": "json"
+    },
+    "currentVersion": {
+      "type": "integer",
+      "default": 1
+    },
+    "inviteToken": {
+      "type": "string"
+    },
+    "isPublic": {
+      "type": "boolean",
+      "default": false
+    }
+  }
+}
