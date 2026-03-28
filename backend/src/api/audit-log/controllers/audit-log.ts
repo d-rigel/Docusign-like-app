@@ -2,7 +2,9 @@
 import { factories } from '@strapi/strapi';
 
 export default factories.createCoreController('api::audit-log.audit-log', ({ strapi }) => ({
-  async findByDocument(ctx) {
+
+  // lowercase: findbydocument
+  async findbydocument(ctx) {
     const user = ctx.state.user;
     if (!user) return ctx.unauthorized();
     const { documentId } = ctx.params;
@@ -12,16 +14,18 @@ export default factories.createCoreController('api::audit-log.audit-log', ({ str
     });
 
     if (!doc) return ctx.notFound();
-    const isOwner = (doc as any).owner?.id === user.id;
+    const isOwner  = (doc as any).owner?.id === user.id;
     const isCollab = (doc as any).collaborators?.some((c: any) => c.user?.id === user.id);
     if (!isOwner && !isCollab) return ctx.forbidden();
 
     const logs = await strapi.entityService.findMany('api::audit-log.audit-log', {
       filters: { document: { id: documentId } },
       populate: ['actor'],
-      sort: { createdAt: 'desc' },
+      sort:     { createdAt: 'desc' },
     });
 
     return ctx.send({ data: logs });
   },
 }));
+
+

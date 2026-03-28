@@ -1,81 +1,108 @@
 // src/index.ts
 export default {
-  /**
-   * An asynchronous register function that runs before
-   * your application gets registered.
-   */
   register(/*{ strapi }*/) {},
 
   /**
-   * Bootstrap: automatically enable API permissions for the Authenticated role.
-   * Wrapped in try/catch so a failure here NEVER prevents Strapi from starting.
-   * If permissions are missing after startup, enable them manually in:
-   *   Admin Panel -> Settings -> Users & Permissions -> Roles -> Authenticated
+   * Bootstrap: enable API permissions for the Authenticated role.
+   *
+   * Strapi v5 stores permissions differently from v4.
+   * This version fetches ALL existing permissions first, then enables
+   * the ones we need — avoiding create/update mismatches.
    */
   async bootstrap({ strapi }) {
     try {
+      // ── 1. Find the Authenticated role ──────────────────────────────────
       const authRole = await strapi
         .query('plugin::users-permissions.role')
-        .findOne({ where: { type: 'authenticated' } });
+        .findOne({ where: { type: 'authenticated' }, populate: ['permissions'] });
 
       if (!authRole) {
-        strapi.log.warn('Could not find authenticated role - skipping permission bootstrap');
+        strapi.log.warn('[bootstrap] Could not find authenticated role – skipping.');
         return;
       }
 
-      const authenticatedPermissions = [
-        { action: 'api::document.document.find'          },
-        { action: 'api::document.document.findone'       },
-        { action: 'api::document.document.create'        },
-        { action: 'api::document.document.update'        },
-        { action: 'api::document.document.delete'        },
-        { action: 'api::document.document.invite'        },
-        { action: 'api::document.document.acceptinvite'  },
-        { action: 'api::document.document.versions'      },
-        { action: 'api::document.document.rollback'      },
-        { action: 'api::signature.signature.create'          },
-        { action: 'api::signature.signature.findbydocument'  },
-        { action: 'api::collaborator.collaborator.find'   },
-        { action: 'api::collaborator.collaborator.update' },
-        { action: 'api::collaborator.collaborator.delete' },
-        { action: 'api::audit-log.audit-log.findbydocument' },
-        { action: 'plugin::upload.content-api.upload'  },
-        { action: 'plugin::upload.content-api.find'    },
-        { action: 'plugin::upload.content-api.findone' },
-        { action: 'plugin::upload.content-api.destroy' },
+      strapi.log.info(`[bootstrap] Found authenticated role id=${authRole.id}`);
+
+      // ── 2. Fetch ALL permissions that belong to this role ────────────────
+      const existingPerms = await strapi
+        .query('plugin::users-permissions.permission')
+        .findMany({ where: { role: { id: authRole.id } } });
+
+      const enabledSet = new Set(
+        existingPerms.filter((p: any) => p.enabled).map((p: any) => p.action)
+      );
+      const allSet = new Set(existingPerms.map((p: any) => p.action));
+
+      strapi.log.info(`[bootstrap] Role has ${existingPerms.length} permissions (${enabledSet.size} enabled)`);
+
+      // ── 3. Actions we want enabled ───────────────────────────────────────
+      const wantEnabled = [
+        // Documents
+        'api::document.document.find',
+        'api::document.document.findone',
+        'api::document.document.create',
+        'api::document.document.update',
+        'api::document.document.delete',
+        'api::document.document.invite',
+        'api::document.document.acceptinvite',
+        'api::document.document.versions',
+        'api::document.document.rollback',
+        // Signatures
+        'api::signature.signature.create',
+        'api::signature.signature.findbydocument',
+        // Collaborators
+        'api::collaborator.collaborator.find',
+        'api::collaborator.collaborator.update',
+        'api::collaborator.collaborator.delete',
+        // Audit logs
+        'api::audit-log.audit-log.findbydocument',
+        // Upload
+        'plugin::upload.content-api.upload',
+        'plugin::upload.content-api.find',
+        'plugin::upload.content-api.findone',
+        'plugin::upload.content-api.destroy',
       ];
 
       let created = 0;
-      let enabled = 0;
+      let updated = 0;
+      let skipped = 0;
 
-      for (const perm of authenticatedPermissions) {
-        try {
-          const existing = await strapi
+      for (const action of wantEnabled) {
+        if (enabledSet.has(action)) {
+          // Already enabled — nothing to do
+          skipped++;
+          continue;
+        }
+
+        if (allSet.has(action)) {
+          // Exists but disabled — enable it
+          const perm = existingPerms.find((p: any) => p.action === action);
+          await strapi
             .query('plugin::users-permissions.permission')
-            .findOne({ where: { action: perm.action, role: authRole.id } });
-
-          if (!existing) {
-            await strapi
-              .query('plugin::users-permissions.permission')
-              .create({ data: { ...perm, role: authRole.id, enabled: true } });
-            created++;
-          } else if (!existing.enabled) {
-            await strapi
-              .query('plugin::users-permissions.permission')
-              .update({ where: { id: existing.id }, data: { enabled: true } });
-            enabled++;
-          }
-        } catch (permErr) {
-          strapi.log.warn('Could not set permission for ' + perm.action + ': ' + permErr.message);
+            .update({ where: { id: perm.id }, data: { enabled: true } });
+          updated++;
+          strapi.log.info(`[bootstrap] Enabled: ${action}`);
+        } else {
+          // Doesn't exist — create it
+          await strapi
+            .query('plugin::users-permissions.permission')
+            .create({ data: { action, role: authRole.id, enabled: true } });
+          created++;
+          strapi.log.info(`[bootstrap] Created: ${action}`);
         }
       }
 
-      strapi.log.info('Permission bootstrap complete - created: ' + created + ', enabled: ' + enabled);
-    } catch (err) {
+      strapi.log.info(
+        `[bootstrap] Done — created: ${created}, enabled: ${updated}, already-ok: ${skipped}`
+      );
+
+    } catch (err: any) {
       strapi.log.warn(
-        'Permission bootstrap failed (non-fatal): ' + err.message +
-        ' -> Manually enable permissions in Admin -> Settings -> Users & Permissions -> Authenticated'
+        `[bootstrap] Failed (non-fatal): ${err.message}\n` +
+        '  → Fix manually: Admin → Settings → Users & Permissions → Roles → Authenticated'
       );
     }
   },
 };
+
+

@@ -1,5 +1,4 @@
-// src/components/editor/CollaborativeEditor.jsx
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef } from 'react';
 import { Box } from '@mui/material';
 import Quill from 'quill';
 import 'quill/dist/quill.snow.css';
@@ -23,17 +22,26 @@ export default function CollaborativeEditor({
   onContentChange,
   currentUser,
 }) {
-  const editorRef   = useRef(null);
-  const quillRef    = useRef(null);
-  const isRemoteRef = useRef(false); // prevent echo of remote changes
+  const containerRef = useRef(null);  // The div Quill mounts into
+  const quillRef     = useRef(null);  // The Quill instance
+  const isRemoteRef  = useRef(false);
+  const initializedRef = useRef(false); // Guard against StrictMode double-init
 
-  // ── Init Quill ─────────────────────────────────────────────────────────
+  // ── Mount Quill ONCE ───────────────────────────────────────────────────
   useEffect(() => {
-    if (!editorRef.current || quillRef.current) return;
+    // StrictMode runs effects twice in dev — this guard prevents double init
+    if (initializedRef.current) return;
+    if (!containerRef.current) return;
 
-    const quill = new Quill(editorRef.current, {
-      theme: 'snow',
-      readOnly,
+    initializedRef.current = true;
+
+    // Create a fresh inner div for Quill to own — avoids React conflicts
+    const editorDiv = document.createElement('div');
+    containerRef.current.appendChild(editorDiv);
+
+    const quill = new Quill(editorDiv, {
+      theme:    'snow',
+      readOnly: readOnly,
       modules: {
         toolbar: readOnly ? false : TOOLBAR_OPTIONS,
         history: { delay: 1000, maxStack: 100, userOnly: true },
@@ -44,76 +52,91 @@ export default function CollaborativeEditor({
     // Load initial content
     if (initialContent) {
       try {
-        // Try JSON delta first
         const delta = JSON.parse(initialContent);
-        if (delta && delta.ops) {
+        if (delta && Array.isArray(delta.ops)) {
           quill.setContents(delta, 'silent');
         } else {
           quill.clipboard.dangerouslyPasteHTML(initialContent);
         }
       } catch {
-        quill.clipboard.dangerouslyPasteHTML(initialContent || '');
+        if (initialContent.trim()) {
+          quill.clipboard.dangerouslyPasteHTML(initialContent);
+        }
       }
     }
 
     quillRef.current = quill;
 
     return () => {
+      // Cleanup on unmount
+      initializedRef.current = false;
       quillRef.current = null;
+      if (containerRef.current) {
+        containerRef.current.innerHTML = '';
+      }
     };
-  }, []); // eslint-disable-line
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Sync readOnly changes ──────────────────────────────────────────────
+  // ── Toggle readOnly when prop changes ─────────────────────────────────
   useEffect(() => {
-    if (quillRef.current) quillRef.current.enable(!readOnly);
+    if (quillRef.current) {
+      quillRef.current.enable(!readOnly);
+    }
   }, [readOnly]);
 
-  // ── Text-change handler (local edits → socket + autosave) ─────────────
+  // ── Local edits → socket + autosave ───────────────────────────────────
   useEffect(() => {
     const quill = quillRef.current;
     if (!quill) return;
 
-    const handleChange = (delta, _oldDelta, source) => {
+    let typingTimer = null;
+
+    const handleChange = (delta, _old, source) => {
       if (source !== 'user' || isRemoteRef.current) return;
 
-      // Emit delta for real-time sync
+      // Broadcast delta to other collaborators
       socket?.emit('doc:delta', {
         documentId,
         delta,
         version: Date.now(),
-        source: 'user',
       });
 
-      // Emit cursor
+      // Broadcast cursor position
       const range = quill.getSelection();
       if (range) {
         socket?.emit('cursor:move', { documentId, range });
       }
 
-      // Trigger typing indicator
+      // Typing indicator
       socket?.emit('typing:start', { documentId });
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(() => {
+        socket?.emit('typing:stop', { documentId });
+      }, 1500);
 
-      // Autosave: pass JSON delta string
+      // Autosave — pass the Quill delta as JSON string
       const content = JSON.stringify(quill.getContents());
       onContentChange?.(content);
     };
 
     quill.on('text-change', handleChange);
-    return () => quill.off('text-change', handleChange);
+    return () => {
+      quill.off('text-change', handleChange);
+      clearTimeout(typingTimer);
+    };
   }, [socket, documentId, onContentChange]);
 
-  // ── Receive remote deltas from socket ─────────────────────────────────
+  // ── Receive remote deltas ──────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
 
-    const handleRemoteDelta = ({ delta, senderId }) => {
+    const handleDelta = ({ delta }) => {
       if (!quillRef.current) return;
       isRemoteRef.current = true;
       quillRef.current.updateContents(delta, 'api');
       isRemoteRef.current = false;
     };
 
-    // Full content sync (e.g. from snapshot on join)
     const handleSnapshot = ({ content }) => {
       if (!quillRef.current || !content) return;
       isRemoteRef.current = true;
@@ -130,36 +153,44 @@ export default function CollaborativeEditor({
       isRemoteRef.current = false;
     };
 
-    socket.on('doc:delta',    handleRemoteDelta);
+    socket.on('doc:delta',    handleDelta);
     socket.on('doc:snapshot', handleSnapshot);
     socket.on('doc:content',  handleSnapshot);
 
     return () => {
-      socket.off('doc:delta',    handleRemoteDelta);
+      socket.off('doc:delta',    handleDelta);
       socket.off('doc:snapshot', handleSnapshot);
       socket.off('doc:content',  handleSnapshot);
     };
   }, [socket]);
 
-  // ── Typing stop after idle ──────────────────────────────────────────────
-  useEffect(() => {
-    if (!socket) return;
-    let timer;
-    const stopTyping = () => {
-      clearTimeout(timer);
-      timer = setTimeout(() => socket.emit('typing:stop', { documentId }), 1500);
-    };
-    const el = editorRef.current;
-    el?.addEventListener('keyup', stopTyping);
-    return () => {
-      el?.removeEventListener('keyup', stopTyping);
-      clearTimeout(timer);
-    };
-  }, [socket, documentId]);
-
   return (
-    <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
-      <div ref={editorRef} style={{ flexGrow: 1, fontFamily: '"Lora", serif' }} />
-    </Box>
+    <Box
+      ref={containerRef}
+      sx={{
+        height: '100%',
+        display: 'flex',
+        flexDirection: 'column',
+        '& .ql-toolbar': {
+          borderTop:    'none',
+          borderLeft:   'none',
+          borderRight:  'none',
+          borderBottom: '1px solid #e5e7eb',
+          bgcolor:      '#fafafa',
+        },
+        '& .ql-container': {
+          border:     'none',
+          flexGrow:    1,
+          fontSize:   '16px',
+          fontFamily: '"Lora", serif',
+        },
+        '& .ql-editor': {
+          minHeight:  '500px',
+          padding:    '40px 60px',
+          lineHeight: 1.9,
+          color:      '#1a1a2e',
+        },
+      }}
+    />
   );
 }

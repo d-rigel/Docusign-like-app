@@ -1,4 +1,5 @@
 // src/api/signature/controllers/signature.ts
+// All method names lowercase to match Strapi v5 permission registration.
 import { factories } from '@strapi/strapi';
 
 export default factories.createCoreController('api::signature.signature', ({ strapi }) => ({
@@ -16,7 +17,7 @@ export default factories.createCoreController('api::signature.signature', ({ str
     if (!doc) return ctx.notFound('Document not found');
 
     const isOwner = (doc as any).owner?.id === user.id;
-    const collab = (doc as any).collaborators?.find((c: any) => c.user?.id === user.id);
+    const collab  = (doc as any).collaborators?.find((c: any) => c.user?.id === user.id);
     const canSign = isOwner || ['signer', 'editor', 'admin'].includes(collab?.role);
 
     if (!canSign) return ctx.forbidden('You do not have signing permission');
@@ -24,14 +25,14 @@ export default factories.createCoreController('api::signature.signature', ({ str
     const signature = await strapi.entityService.create('api::signature.signature', {
       data: {
         signatureData,
-        signerName: `${user.firstname || ''} ${user.lastname || ''}`.trim() || user.username,
+        signerName:  `${user.firstname || ''} ${user.lastname || ''}`.trim() || user.username,
         signerEmail: user.email,
         positionX,
         positionY,
         pageNumber,
-        isLocked: true,
-        document: documentId,
-        signer: user.id,
+        isLocked:  true,
+        document:  documentId,
+        signer:    user.id,
         ipAddress: ctx.request.ip,
         userAgent: ctx.request.headers['user-agent'],
       },
@@ -40,20 +41,21 @@ export default factories.createCoreController('api::signature.signature', ({ str
 
     await strapi.entityService.create('api::audit-log.audit-log', {
       data: {
-        action: 'signed',
+        action:    'signed',
         actorEmail: user.email,
         actorName: `${user.firstname || ''} ${user.lastname || ''}`.trim() || user.username,
-        document: documentId,
-        actor: user.id,
-        metadata: { signatureId: signature.id, pageNumber, ipAddress: ctx.request.ip },
+        document:  documentId,
+        actor:     user.id,
+        metadata:  { signatureId: signature.id, pageNumber, ipAddress: ctx.request.ip },
         ipAddress: ctx.request.ip,
       },
-    });
+    }).catch(() => {});
 
     return ctx.send({ data: signature });
   },
 
-  async findByDocument(ctx) {
+  // lowercase: findbydocument  (matches Strapi v5 permission key)
+  async findbydocument(ctx) {
     const user = ctx.state.user;
     if (!user) return ctx.unauthorized();
 
@@ -62,9 +64,13 @@ export default factories.createCoreController('api::signature.signature', ({ str
     const signatures = await strapi.entityService.findMany('api::signature.signature', {
       filters: { document: { id: documentId } },
       populate: ['signer'],
-      sort: { createdAt: 'asc' },
+      sort:     { createdAt: 'asc' },
     });
 
     return ctx.send({ data: signatures });
   },
 }));
+
+
+
+

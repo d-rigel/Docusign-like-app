@@ -100,6 +100,14 @@ VITE_SOCKET_URL=http://localhost:3001
 
 You need **3 terminal windows**:
 
+### To run all service at once
+
+in the project root folder run
+
+```bash
+./start.sh
+```
+
 ### Terminal 1 — Strapi Backend
 
 ```bash
@@ -223,6 +231,13 @@ Then add your Cloudinary credentials to `.env` and restart.
 - The file is stored in Cloudinary and linked to the document
 
 ---
+
+### media
+
+![login page](./frontend/assets/login.png)
+![register page](./frontend/assets/register.png)
+![Doc owner page](./frontend/assets/doc-owner-page.png)
+![showing real time collaboration on bother owner and user sides](./frontend/assets/real-time-collaboration.png)
 
 ## Common Issues
 
