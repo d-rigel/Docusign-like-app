@@ -587,7 +587,7 @@ export interface ApiDocumentDocument extends Struct.CollectionTypeSchema {
 export interface ApiSignatureSignature extends Struct.CollectionTypeSchema {
   collectionName: 'signatures';
   info: {
-    description: 'Document signatures with audit trail';
+    description: 'Document signatures with position, size and audit trail';
     displayName: 'Signature';
     pluralName: 'signatures';
     singularName: 'signature';
@@ -600,6 +600,7 @@ export interface ApiSignatureSignature extends Struct.CollectionTypeSchema {
     createdBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
     document: Schema.Attribute.Relation<'manyToOne', 'api::document.document'>;
+    height: Schema.Attribute.Float & Schema.Attribute.DefaultTo<80>;
     ipAddress: Schema.Attribute.String;
     isLocked: Schema.Attribute.Boolean & Schema.Attribute.DefaultTo<true>;
     locale: Schema.Attribute.String & Schema.Attribute.Private;
@@ -609,8 +610,8 @@ export interface ApiSignatureSignature extends Struct.CollectionTypeSchema {
     > &
       Schema.Attribute.Private;
     pageNumber: Schema.Attribute.Integer & Schema.Attribute.DefaultTo<1>;
-    positionX: Schema.Attribute.Float;
-    positionY: Schema.Attribute.Float;
+    positionX: Schema.Attribute.Float & Schema.Attribute.DefaultTo<50>;
+    positionY: Schema.Attribute.Float & Schema.Attribute.DefaultTo<80>;
     publishedAt: Schema.Attribute.DateTime;
     signatureData: Schema.Attribute.Text & Schema.Attribute.Required;
     signer: Schema.Attribute.Relation<
@@ -623,6 +624,7 @@ export interface ApiSignatureSignature extends Struct.CollectionTypeSchema {
     updatedBy: Schema.Attribute.Relation<'oneToOne', 'admin::user'> &
       Schema.Attribute.Private;
     userAgent: Schema.Attribute.String;
+    width: Schema.Attribute.Float & Schema.Attribute.DefaultTo<200>;
   };
 }
 

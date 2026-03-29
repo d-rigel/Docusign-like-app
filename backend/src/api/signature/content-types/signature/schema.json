@@ -5,53 +5,27 @@
     "singularName": "signature",
     "pluralName": "signatures",
     "displayName": "Signature",
-    "description": "Document signatures with audit trail"
+    "description": "Document signatures with position, size and audit trail"
   },
-  "options": {
-    "draftAndPublish": false
-  },
+  "options": { "draftAndPublish": false },
   "attributes": {
-    "signatureData": {
-      "type": "text",
-      "required": true
-    },
-    "signerName": {
-      "type": "string",
-      "required": true
-    },
-    "signerEmail": {
-      "type": "email",
-      "required": true
-    },
-    "positionX": {
-      "type": "float"
-    },
-    "positionY": {
-      "type": "float"
-    },
-    "pageNumber": {
-      "type": "integer",
-      "default": 1
-    },
-    "ipAddress": {
-      "type": "string"
-    },
-    "userAgent": {
-      "type": "string"
-    },
-    "isLocked": {
-      "type": "boolean",
-      "default": true
-    },
+    "signatureData": { "type": "text",    "required": true },
+    "signerName":    { "type": "string",  "required": true },
+    "signerEmail":   { "type": "email",   "required": true },
+    "positionX":     { "type": "float",   "default": 50 },
+    "positionY":     { "type": "float",   "default": 80 },
+    "width":         { "type": "float",   "default": 200 },
+    "height":        { "type": "float",   "default": 80 },
+    "pageNumber":    { "type": "integer", "default": 1 },
+    "ipAddress":     { "type": "string" },
+    "userAgent":     { "type": "string" },
+    "isLocked":      { "type": "boolean", "default": true },
     "document": {
-      "type": "relation",
-      "relation": "manyToOne",
-      "target": "api::document.document",
-      "inversedBy": "signatures"
+      "type": "relation", "relation": "manyToOne",
+      "target": "api::document.document", "inversedBy": "signatures"
     },
     "signer": {
-      "type": "relation",
-      "relation": "manyToOne",
+      "type": "relation", "relation": "manyToOne",
       "target": "plugin::users-permissions.user"
     }
   }

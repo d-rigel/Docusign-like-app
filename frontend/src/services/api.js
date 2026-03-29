@@ -8,14 +8,12 @@ const api = axios.create({
   headers: { 'Content-Type': 'application/json' },
 });
 
-// Attach JWT to every request
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('jwt');
   if (token) config.headers.Authorization = `Bearer ${token}`;
   return config;
 });
 
-// Redirect on 401
 api.interceptors.response.use(
   (res) => res,
   (err) => {
@@ -28,14 +26,12 @@ api.interceptors.response.use(
   }
 );
 
-// ── Auth ───────────────────────────────────────────────────────────────────
 export const authAPI = {
   login:    (identifier, password) => api.post('/auth/local', { identifier, password }),
   register: (username, email, password) => api.post('/auth/local/register', { username, email, password }),
   me:       () => api.get('/users/me'),
 };
 
-// ── Documents ──────────────────────────────────────────────────────────────
 export const documentsAPI = {
   list:         ()            => api.get('/documents'),
   get:          (id)          => api.get(`/documents/${id}`),
@@ -46,39 +42,34 @@ export const documentsAPI = {
   acceptInvite: (token)       => api.post(`/documents/accept-invite/${token}`),
   versions:     (id)          => api.get(`/documents/${id}/versions`),
   rollback:     (id, version) => api.post(`/documents/${id}/rollback`, { version }),
-  // Parse uploaded file into editable HTML
   parseFile:    (id)          => api.post(`/documents/${id}/parse-file`),
 };
 
-// ── Signatures ─────────────────────────────────────────────────────────────
 export const signaturesAPI = {
-  create:     (data)       => api.post('/signatures', data),
-  byDocument: (documentId) => api.get(`/signatures/document/${documentId}`),
+  create:         (data)       => api.post('/signatures', data),
+  byDocument:     (documentId) => api.get(`/signatures/document/${documentId}`),
+  // Update position/size of a placed signature
+  updatePosition: (id, data)   => api.put(`/signatures/${id}/position`, data),
 };
 
-// ── Collaborators ──────────────────────────────────────────────────────────
 export const collaboratorsAPI = {
   byDocument: (documentId) => api.get('/collaborators', { params: { documentId } }),
   update:     (id, data)   => api.put(`/collaborators/${id}`, data),
   remove:     (id)         => api.delete(`/collaborators/${id}`),
 };
 
-// ── Audit Logs ─────────────────────────────────────────────────────────────
 export const auditAPI = {
   byDocument: (documentId) => api.get(`/audit-logs/document/${documentId}`),
 };
 
-// ── Upload ─────────────────────────────────────────────────────────────────
 export const uploadAPI = {
-  upload: (formData) =>
-    axios.post(`${BASE_URL}/api/upload`, formData, {
-      headers: {
-        'Content-Type': 'multipart/form-data',
-        Authorization: `Bearer ${localStorage.getItem('jwt')}`,
-      },
-    }),
+  upload: (formData) => axios.post(`${BASE_URL}/api/upload`, formData, {
+    headers: {
+      'Content-Type': 'multipart/form-data',
+      Authorization: `Bearer ${localStorage.getItem('jwt')}`,
+    },
+  }),
 };
 
 export default api;
-
 

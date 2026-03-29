@@ -48,15 +48,12 @@ async function downloadViaCloudinary(file: any): Promise<Buffer> {
   const resourceType = file.provider_metadata?.resource_type || 'image';
   const ext          = (file.ext || '.pdf').replace('.', '');
 
-  strapi?.log.info(`[parse-file] public_id=${publicId} resource_type=${resourceType} ext=${ext}`);
-
   // Strategy 1: SDK private_download_url
   try {
     const signedUrl = cloudinary.utils.private_download_url(publicId, ext, {
-      resource_type: resourceType,
-      type: 'upload',
+      resource_type: resourceType, type: 'upload',
     });
-    strapi?.log.info(`[parse-file] Strategy 1: private_download_url`);
+    strapi?.log.info(`[parse-file] Downloading via private_download_url…`);
     const buf = await fetchBuffer(signedUrl);
     strapi?.log.info(`[parse-file] Downloaded ${buf.length} bytes ✓`);
     return buf;
@@ -64,202 +61,143 @@ async function downloadViaCloudinary(file: any): Promise<Buffer> {
     strapi?.log.warn(`[parse-file] Strategy 1 failed: ${e.message}`);
   }
 
-  // Strategy 2: Admin API resource lookup → secure_url
+  // Strategy 2: Admin API secure_url
   try {
-    strapi?.log.info(`[parse-file] Strategy 2: Admin API resource lookup`);
     const info = await cloudinary.api.resource(publicId, { resource_type: resourceType });
     if (info.secure_url) {
-      const buf = await fetchBuffer(info.secure_url);
-      strapi?.log.info(`[parse-file] Downloaded ${buf.length} bytes via secure_url ✓`);
-      return buf;
+      return fetchBuffer(info.secure_url);
     }
   } catch (e: any) {
     strapi?.log.warn(`[parse-file] Strategy 2 failed: ${e.message}`);
   }
 
   // Strategy 3: Direct URL
-  strapi?.log.info(`[parse-file] Strategy 3: Direct URL`);
   const directUrl = file.url?.startsWith('http') ? file.url : `http://localhost:1337${file.url}`;
   return fetchBuffer(directUrl);
 }
 
-// ── Extract text from PDF using pdf-parse ────────────────────────────────────
-async function extractPdfText(buffer: Buffer): Promise<string> {
-  const strapi = (global as any).strapi;
-
-  // FIX: pdf-parse exports a function directly — but require() may return
-  // { default: fn } in some compiled contexts. Handle both.
-  const pdfParseModule = require('pdf-parse');
-  const pdfParse = typeof pdfParseModule === 'function'
-    ? pdfParseModule
-    : (pdfParseModule.default || pdfParseModule);
-
-  if (typeof pdfParse !== 'function') {
-    throw new Error(`pdf-parse did not export a function, got: ${typeof pdfParseModule}`);
+// ── pdf-parse: handle all possible export shapes ─────────────────────────────
+async function parsePdfWithPdfParse(buffer: Buffer): Promise<string> {
+  const mod = require('pdf-parse');
+  // pdf-parse can export as: function, { default: fn }, or { default: { default: fn } }
+  let fn = mod;
+  if (typeof fn !== 'function') fn = mod.default;
+  if (typeof fn !== 'function') fn = mod.default?.default;
+  if (typeof fn !== 'function') {
+    throw new Error(`pdf-parse export shape unrecognised: ${JSON.stringify(Object.keys(mod))}`);
   }
-
-  const data = await pdfParse(buffer);
+  const data = await fn(buffer);
   return (data.text || '').trim();
 }
 
-// ── Render PDF to text using pdfjs-dist (fallback for scanned PDFs) ──────────
-async function pdfToText(buffer: Buffer): Promise<string> {
+// ── pdfjs legacy text extraction (no canvas, no worker, text-only) ────────────
+async function parsePdfWithPdfjs(buffer: Buffer): Promise<string> {
   const strapi = (global as any).strapi;
 
-  // FIX: pdfjs-dist v4 changed its entry point — try multiple paths
-  let pdfjsLib: any;
-  const pdfPaths = [
-    'pdfjs-dist/build/pdf.mjs',
-    'pdfjs-dist/build/pdf.js',
-    'pdfjs-dist/legacy/build/pdf.js',
-    'pdfjs-dist',
-  ];
+  // The legacy build is the only Node-compatible one
+  const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
 
-  for (const p of pdfPaths) {
-    try {
-      pdfjsLib = require(p);
-      if (pdfjsLib.getDocument || pdfjsLib.default?.getDocument) {
-        if (!pdfjsLib.getDocument) pdfjsLib = pdfjsLib.default;
-        strapi?.log.info(`[parse-file] Loaded pdfjs-dist from: ${p}`);
-        break;
-      }
-    } catch { /* try next */ }
-  }
+  // DO NOT assign to GlobalWorkerOptions — it is read-only in the legacy build.
+  // Instead disable the worker by setting workerPort to null in getDocument options.
+  const loadingTask = pdfjsLib.getDocument({
+    data:             new Uint8Array(buffer),
+    useWorkerFetch:   false,
+    isEvalSupported:  false,
+    disableWorker:    true,
+    useSystemFonts:   true,
+  });
+  const pdfDoc   = await loadingTask.promise;
+  const maxPages = Math.min(pdfDoc.numPages, 20);
+  const lines: string[] = [];
 
-  if (!pdfjsLib?.getDocument) {
-    throw new Error('pdfjs-dist not available — run: npm install pdfjs-dist');
-  }
-
-  // pdfjs-dist v4 needs a canvas factory for Node.js text extraction
-  // For text-only extraction we don't actually need canvas
-  pdfjsLib.GlobalWorkerOptions = pdfjsLib.GlobalWorkerOptions || {};
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-
-  const loadingTask = pdfjsLib.getDocument({ data: new Uint8Array(buffer) });
-  const pdfDoc      = await loadingTask.promise;
-  const numPages    = pdfDoc.numPages;
-  const maxPages    = Math.min(numPages, 15);
-
-  strapi?.log.info(`[parse-file] pdfjs: extracting text from ${maxPages}/${numPages} pages`);
-
-  const allText: string[] = [];
   for (let i = 1; i <= maxPages; i++) {
     const page    = await pdfDoc.getPage(i);
     const content = await page.getTextContent();
-    const pageText = content.items
-      .map((item: any) => item.str || '')
-      .join(' ')
-      .trim();
-    if (pageText) allText.push(pageText);
+    const text    = content.items.map((item: any) => item.str || '').join(' ').trim();
+    if (text) lines.push(text);
   }
 
-  return allText.join('\n');
+  return lines.join('\n');
 }
 
-// ── Render PDF pages to images for OCR (scanned documents) ───────────────────
-async function pdfPagesToImages(buffer: Buffer): Promise<Buffer[]> {
-  const strapi = (global as any).strapi;
-
-  let pdfjsLib: any;
-  const pdfPaths = [
-    'pdfjs-dist/build/pdf.mjs',
-    'pdfjs-dist/build/pdf.js',
-    'pdfjs-dist/legacy/build/pdf.js',
-    'pdfjs-dist',
-  ];
-  for (const p of pdfPaths) {
-    try {
-      const mod = require(p);
-      pdfjsLib  = mod.getDocument ? mod : mod.default;
-      if (pdfjsLib?.getDocument) break;
-    } catch { /* try next */ }
-  }
-  if (!pdfjsLib?.getDocument) throw new Error('pdfjs-dist not found');
-
-  // canvas is needed for rendering
-  const { createCanvas } = require('canvas');
-
-  class NodeCanvasFactory {
-    create(w: number, h: number) {
-      const canvas = createCanvas(w, h);
-      return { canvas, context: canvas.getContext('2d') };
-    }
-    reset(cc: any, w: number, h: number) { cc.canvas.width = w; cc.canvas.height = h; }
-    destroy(cc: any) { cc.canvas.width = 0; cc.canvas.height = 0; }
-  }
-
-  pdfjsLib.GlobalWorkerOptions = pdfjsLib.GlobalWorkerOptions || {};
-  pdfjsLib.GlobalWorkerOptions.workerSrc = '';
-
-  const pdfDoc   = await pdfjsLib.getDocument({ data: new Uint8Array(buffer) }).promise;
-  const maxPages = Math.min(pdfDoc.numPages, 10);
-  const images: Buffer[] = [];
-
-  for (let i = 1; i <= maxPages; i++) {
-    const page     = await pdfDoc.getPage(i);
-    const viewport = page.getViewport({ scale: 2.0 });
-    const factory  = new NodeCanvasFactory();
-    const cc       = factory.create(viewport.width, viewport.height);
-    await page.render({ canvasContext: cc.context, viewport, canvasFactory: factory }).promise;
-    images.push(cc.canvas.toBuffer('image/png'));
-    strapi?.log.info(`[parse-file] Rendered page ${i}/${maxPages}`);
-  }
-
-  return images;
+// ── OCR via tesseract on a plain image buffer ─────────────────────────────────
+async function runTesseract(imageBuffer: Buffer): Promise<string> {
+  const { createWorker } = require('tesseract.js');
+  const worker = await createWorker('eng');
+  const { data: { text } } = await worker.recognize(imageBuffer);
+  await worker.terminate();
+  return text || '';
 }
 
-// ── Full PDF extraction pipeline ─────────────────────────────────────────────
+// ── Full PDF pipeline ─────────────────────────────────────────────────────────
 async function extractPdf(buffer: Buffer): Promise<{ html: string; wasScanned: boolean }> {
   const strapi = (global as any).strapi;
   let rawText  = '';
 
-  // Step 1: Try pdf-parse (fast, works on digital PDFs)
+  // Step 1: pdf-parse (fastest for digital PDFs)
   try {
-    rawText = await extractPdfText(buffer);
-    strapi?.log.info(`[parse-file] pdf-parse: ${rawText.length} chars extracted`);
+    rawText = await parsePdfWithPdfParse(buffer);
+    strapi?.log.info(`[parse-file] pdf-parse: ${rawText.length} chars`);
   } catch (e: any) {
     strapi?.log.warn(`[parse-file] pdf-parse failed: ${e.message}`);
   }
 
-  // Step 2: If pdf-parse got little/nothing, try pdfjs text extraction
+  // Step 2: pdfjs text extraction (backup for digital PDFs)
   if (rawText.length < 50) {
     try {
       strapi?.log.info(`[parse-file] Trying pdfjs text extraction…`);
-      rawText = await pdfToText(buffer);
-      strapi?.log.info(`[parse-file] pdfjs text: ${rawText.length} chars`);
+      rawText = await parsePdfWithPdfjs(buffer);
+      strapi?.log.info(`[parse-file] pdfjs: ${rawText.length} chars`);
     } catch (e: any) {
-      strapi?.log.warn(`[parse-file] pdfjs text extraction failed: ${e.message}`);
+      strapi?.log.warn(`[parse-file] pdfjs failed: ${e.message}`);
     }
   }
 
-  // Got real text → digital PDF, return it
+  // Got real text → return it
   if (rawText.length > 50) {
     const lines = rawText.split('\n').map((l: string) => l.trim()).filter(Boolean);
     return { html: lines.map(l => `<p>${escapeHtml(l)}</p>`).join('\n'), wasScanned: false };
   }
 
-  // Step 3: Still no text → scanned PDF, render pages and OCR
-  strapi?.log.info('[parse-file] No text found — attempting scanned PDF OCR…');
+  // Step 3: Scanned PDF → render each page as image → OCR
+  strapi?.log.info('[parse-file] No digital text — attempting OCR on rendered pages…');
   try {
-    const pageImages = await pdfPagesToImages(buffer);
-    if (pageImages.length === 0) {
-      return { html: '<p><em>Could not render PDF pages.</em></p>', wasScanned: true };
+    const pdfjsLib = require('pdfjs-dist/legacy/build/pdf.js');
+    const { createCanvas } = require('canvas');
+
+    class NodeCanvasFactory {
+      create(w: number, h: number) {
+        const c = createCanvas(w, h);
+        return { canvas: c, context: c.getContext('2d') };
+      }
+      reset(cc: any, w: number, h: number) { cc.canvas.width = w; cc.canvas.height = h; }
+      destroy(cc: any) { cc.canvas.width = 0; cc.canvas.height = 0; }
     }
 
-    const { createWorker } = require('tesseract.js');
-    const worker = await createWorker('eng');
+    const pdfDoc   = await pdfjsLib.getDocument({
+      data: new Uint8Array(buffer), useWorkerFetch: false, isEvalSupported: false, disableWorker: true,
+    }).promise;
+    const maxPages = Math.min(pdfDoc.numPages, 10);
     const allLines: string[] = [];
 
-    for (let i = 0; i < pageImages.length; i++) {
-      const { data: { text } } = await worker.recognize(pageImages[i]);
-      const lines = text.split('\n').map((l: string) => l.trim()).filter(Boolean);
+    for (let i = 1; i <= maxPages; i++) {
+      const page     = await pdfDoc.getPage(i);
+      const viewport = page.getViewport({ scale: 2.0 });
+      const factory  = new NodeCanvasFactory();
+      const cc       = factory.create(viewport.width, viewport.height);
+
+      await page.render({ canvasContext: cc.context, viewport, canvasFactory: factory }).promise;
+
+      const pngBuf = cc.canvas.toBuffer('image/png');
+      const text   = await runTesseract(pngBuf);
+      const lines  = text.split('\n').map((l: string) => l.trim()).filter(Boolean);
+
       if (lines.length > 0) {
-        if (pageImages.length > 1) allLines.push(`<h3>Page ${i + 1}</h3>`);
+        if (maxPages > 1) allLines.push(`<h3>Page ${i}</h3>`);
         allLines.push(...lines.map(l => `<p>${escapeHtml(l)}</p>`));
       }
-      strapi?.log.info(`[parse-file] OCR page ${i+1}: ${lines.length} lines`);
+      strapi?.log.info(`[parse-file] OCR page ${i}: ${lines.length} lines`);
     }
-    await worker.terminate();
 
     return {
       html: allLines.length > 0
@@ -268,9 +206,9 @@ async function extractPdf(buffer: Buffer): Promise<{ html: string; wasScanned: b
       wasScanned: true,
     };
   } catch (e: any) {
-    strapi?.log.error(`[parse-file] OCR pipeline error: ${e.message}`);
+    strapi?.log.error(`[parse-file] Scanned OCR failed: ${e.message}`);
     return {
-      html: '<p><em>Could not extract text from this scanned document. Please type your content below.</em></p>',
+      html: '<p><em>Could not extract text from this document. Please type your content below.</em></p>',
       wasScanned: true,
     };
   }
@@ -278,8 +216,7 @@ async function extractPdf(buffer: Buffer): Promise<{ html: string; wasScanned: b
 
 // ── Word extraction ───────────────────────────────────────────────────────────
 async function extractDocx(buffer: Buffer): Promise<string> {
-  const mammoth = require('mammoth');
-  const result  = await mammoth.convertToHtml({ buffer });
+  const result = await require('mammoth').convertToHtml({ buffer });
   return result.value || '<p>No content extracted.</p>';
 }
 
@@ -288,13 +225,9 @@ async function ocrImage(buffer: Buffer, mime: string): Promise<string> {
   const strapi  = (global as any).strapi;
   const b64     = buffer.toString('base64');
   const preview = `<p><img src="data:${mime};base64,${b64}" style="max-width:100%;height:auto;" /></p>`;
-
   try {
-    const { createWorker } = require('tesseract.js');
-    const worker = await createWorker('eng');
-    const { data: { text } } = await worker.recognize(buffer);
-    await worker.terminate();
-    const lines = text.split('\n').map((l: string) => l.trim()).filter(Boolean);
+    const text    = await runTesseract(buffer);
+    const lines   = text.split('\n').map((l: string) => l.trim()).filter(Boolean);
     return preview + (lines.length > 0
       ? `<h3>Extracted Text (OCR)</h3>${lines.map(l => `<p>${escapeHtml(l)}</p>`).join('\n')}`
       : '');
