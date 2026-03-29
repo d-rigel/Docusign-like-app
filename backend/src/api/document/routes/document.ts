@@ -9,6 +9,7 @@ export default {
     { method: 'POST',   path: '/documents/:id/invite',           handler: 'document.invite',       config: { policies: [], middlewares: [] } },
     { method: 'GET',    path: '/documents/:id/versions',         handler: 'document.versions',     config: { policies: [], middlewares: [] } },
     { method: 'POST',   path: '/documents/:id/rollback',         handler: 'document.rollback',     config: { policies: [], middlewares: [] } },
+    { method: 'POST',   path: '/documents/:id/parse-file',        handler: 'parse-file.parseFile',  config: { policies: [], middlewares: [] } },
   ],
 };
 

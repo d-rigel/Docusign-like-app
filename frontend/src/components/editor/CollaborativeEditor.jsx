@@ -1,4 +1,6 @@
-import React, { useEffect, useRef } from 'react';
+// src/components/editor/CollaborativeEditor.jsx
+// Exposes setHtmlContent(html) via forwardRef so parent can push file content into editor.
+import React, { useEffect, useRef, useImperativeHandle, forwardRef } from 'react';
 import { Box } from '@mui/material';
 import Quill from 'quill';
 import 'quill/dist/quill.snow.css';
@@ -10,32 +12,41 @@ const TOOLBAR_OPTIONS = [
   [{ align: [] }],
   [{ list: 'ordered' }, { list: 'bullet' }],
   ['blockquote', 'code-block'],
-  ['link'],
+  ['link', 'image'],
   ['clean'],
 ];
 
-export default function CollaborativeEditor({
-  documentId,
-  initialContent,
-  readOnly,
-  socket,
-  onContentChange,
-  currentUser,
-}) {
-  const containerRef = useRef(null);  // The div Quill mounts into
-  const quillRef     = useRef(null);  // The Quill instance
-  const isRemoteRef  = useRef(false);
-  const initializedRef = useRef(false); // Guard against StrictMode double-init
+const CollaborativeEditor = forwardRef(function CollaborativeEditor(
+  { documentId, initialContent, readOnly, socket, onContentChange, currentUser },
+  ref
+) {
+  const containerRef   = useRef(null);
+  const quillRef       = useRef(null);
+  const isRemoteRef    = useRef(false);
+  const initializedRef = useRef(false);
 
-  // ── Mount Quill ONCE ───────────────────────────────────────────────────
+  // Expose setHtmlContent to parent via ref
+  useImperativeHandle(ref, () => ({
+    setHtmlContent(html) {
+      const quill = quillRef.current;
+      if (!quill) return;
+      isRemoteRef.current = true;
+      quill.clipboard.dangerouslyPasteHTML(html);
+      isRemoteRef.current = false;
+      // Trigger onContentChange so it gets autosaved
+      const content = JSON.stringify(quill.getContents());
+      onContentChange?.(content);
+    },
+    getContent() {
+      return quillRef.current ? JSON.stringify(quillRef.current.getContents()) : '';
+    },
+  }), [onContentChange]);
+
+  // ── Mount Quill once ─────────────────────────────────────────────────────
   useEffect(() => {
-    // StrictMode runs effects twice in dev — this guard prevents double init
-    if (initializedRef.current) return;
-    if (!containerRef.current) return;
-
+    if (initializedRef.current || !containerRef.current) return;
     initializedRef.current = true;
 
-    // Create a fresh inner div for Quill to own — avoids React conflicts
     const editorDiv = document.createElement('div');
     containerRef.current.appendChild(editorDiv);
 
@@ -68,65 +79,43 @@ export default function CollaborativeEditor({
     quillRef.current = quill;
 
     return () => {
-      // Cleanup on unmount
       initializedRef.current = false;
       quillRef.current = null;
-      if (containerRef.current) {
-        containerRef.current.innerHTML = '';
-      }
+      if (containerRef.current) containerRef.current.innerHTML = '';
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, []); // eslint-disable-line
 
-  // ── Toggle readOnly when prop changes ─────────────────────────────────
+  // ── readOnly toggle ────────────────────────────────────────────────────────
   useEffect(() => {
-    if (quillRef.current) {
-      quillRef.current.enable(!readOnly);
-    }
+    if (quillRef.current) quillRef.current.enable(!readOnly);
   }, [readOnly]);
 
-  // ── Local edits → socket + autosave ───────────────────────────────────
+  // ── Local edits → socket + autosave ───────────────────────────────────────
   useEffect(() => {
     const quill = quillRef.current;
     if (!quill) return;
-
     let typingTimer = null;
 
     const handleChange = (delta, _old, source) => {
       if (source !== 'user' || isRemoteRef.current) return;
 
-      // Broadcast delta to other collaborators
-      socket?.emit('doc:delta', {
-        documentId,
-        delta,
-        version: Date.now(),
-      });
-
-      // Broadcast cursor position
-      const range = quill.getSelection();
-      if (range) {
-        socket?.emit('cursor:move', { documentId, range });
-      }
-
-      // Typing indicator
+      socket?.emit('doc:delta',    { documentId, delta, version: Date.now() });
       socket?.emit('typing:start', { documentId });
-      clearTimeout(typingTimer);
-      typingTimer = setTimeout(() => {
-        socket?.emit('typing:stop', { documentId });
-      }, 1500);
 
-      // Autosave — pass the Quill delta as JSON string
-      const content = JSON.stringify(quill.getContents());
-      onContentChange?.(content);
+      const range = quill.getSelection();
+      if (range) socket?.emit('cursor:move', { documentId, range });
+
+      clearTimeout(typingTimer);
+      typingTimer = setTimeout(() => socket?.emit('typing:stop', { documentId }), 1500);
+
+      onContentChange?.(JSON.stringify(quill.getContents()));
     };
 
     quill.on('text-change', handleChange);
-    return () => {
-      quill.off('text-change', handleChange);
-      clearTimeout(typingTimer);
-    };
+    return () => { quill.off('text-change', handleChange); clearTimeout(typingTimer); };
   }, [socket, documentId, onContentChange]);
 
-  // ── Receive remote deltas ──────────────────────────────────────────────
+  // ── Receive remote deltas ─────────────────────────────────────────────────
   useEffect(() => {
     if (!socket) return;
 
@@ -142,11 +131,8 @@ export default function CollaborativeEditor({
       isRemoteRef.current = true;
       try {
         const delta = JSON.parse(content);
-        if (delta?.ops) {
-          quillRef.current.setContents(delta, 'api');
-        } else {
-          quillRef.current.clipboard.dangerouslyPasteHTML(content);
-        }
+        if (delta?.ops) quillRef.current.setContents(delta, 'api');
+        else quillRef.current.clipboard.dangerouslyPasteHTML(content);
       } catch {
         quillRef.current.clipboard.dangerouslyPasteHTML(content);
       }
@@ -156,7 +142,6 @@ export default function CollaborativeEditor({
     socket.on('doc:delta',    handleDelta);
     socket.on('doc:snapshot', handleSnapshot);
     socket.on('doc:content',  handleSnapshot);
-
     return () => {
       socket.off('doc:delta',    handleDelta);
       socket.off('doc:snapshot', handleSnapshot);
@@ -165,32 +150,22 @@ export default function CollaborativeEditor({
   }, [socket]);
 
   return (
-    <Box
-      ref={containerRef}
-      sx={{
-        height: '100%',
-        display: 'flex',
-        flexDirection: 'column',
-        '& .ql-toolbar': {
-          borderTop:    'none',
-          borderLeft:   'none',
-          borderRight:  'none',
-          borderBottom: '1px solid #e5e7eb',
-          bgcolor:      '#fafafa',
-        },
-        '& .ql-container': {
-          border:     'none',
-          flexGrow:    1,
-          fontSize:   '16px',
-          fontFamily: '"Lora", serif',
-        },
-        '& .ql-editor': {
-          minHeight:  '500px',
-          padding:    '40px 60px',
-          lineHeight: 1.9,
-          color:      '#1a1a2e',
-        },
-      }}
-    />
+    <Box ref={containerRef} sx={{
+      flexGrow: 1,
+      display: 'flex',
+      flexDirection: 'column',
+      '& .ql-toolbar': {
+        borderTop: 'none', borderLeft: 'none', borderRight: 'none',
+        borderBottom: '1px solid #e5e7eb', bgcolor: '#fafafa',
+        flexShrink: 0,
+      },
+      '& .ql-container': { border: 'none', flexGrow: 1, fontSize: '16px', fontFamily: '"Lora", serif' },
+      '& .ql-editor':    { minHeight: '500px', padding: '40px 60px', lineHeight: 1.9, color: '#1a1a2e' },
+    }} />
   );
-}
+});
+
+export default CollaborativeEditor;
+
+
+
