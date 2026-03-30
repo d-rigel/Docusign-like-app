@@ -77,6 +77,10 @@ const useDocumentStore = create((set, get) => ({
     }));
   },
 
+  // ── Remove signature locally ───────────────────────────────────────────────
+  removeSignatureLocally: (id) =>
+    set((s) => ({ signatures: s.signatures.filter((sig) => sig.id !== id) })),
+
   // ── Add signature locally (from socket) ────────────────────────────────
   addSignatureLocally: (sig) =>
     set((s) => ({ signatures: [...s.signatures, sig] })),
@@ -106,3 +110,7 @@ const useDocumentStore = create((set, get) => ({
 }));
 
 export default useDocumentStore;
+
+
+
+

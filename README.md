@@ -1,26 +1,54 @@
-# DocuCollab — Google Docs + DocuSign Mini App
+# DocuCollab — Collaborative Document Editing & Signing
 
-A full-stack real-time collaborative document editing and signing application built with **Strapi v5**, **React + MUI**, and **Socket.IO**.
+A full-stack mini Google Docs + DocuSign application. Upload or create documents, edit them collaboratively in real time, draw and place signatures, and track every action with a full audit trail.
 
 ---
 
-## Architecture
+## Tech Stack
+
+| Layer             | Technology                                     |
+| ----------------- | ---------------------------------------------- |
+| Backend API       | Strapi v5 (TypeScript, CommonJS)               |
+| Database          | SQLite (development) / PostgreSQL (production) |
+| File Storage      | Cloudinary                                     |
+| Real-Time         | Socket.IO v4 (standalone server)               |
+| Frontend          | React 18 + Vite                                |
+| UI                | Material UI v7                                 |
+| State             | Zustand                                        |
+| Rich Text Editor  | Quill v2                                       |
+| Signature Drawing | Native HTML5 Canvas                            |
+| File Parsing      | pdf-parse, pdfjs-dist, mammoth, tesseract.js   |
+| HTTP Client       | Axios                                          |
+
+---
+
+## Project Structure
 
 ```
 docusign-app/
-├── backend/          # Strapi v5 REST API + Socket.IO server
-│   ├── config/       # Server, DB, middleware, plugin config
+├── backend/                  # Strapi v5 API + Socket.IO server
+│   ├── config/               # server, database, middlewares, plugins, admin
 │   ├── src/
-│   │   ├── api/      # document, signature, collaborator, audit-log
-│   │   ├── socket/   # Standalone Socket.IO server (server.js)
-│   │   └── index.ts  # Bootstrap (auto-configure permissions)
+│   │   ├── api/
+│   │   │   ├── document/     # CRUD, versioning, invite, file parsing
+│   │   │   ├── signature/    # Create, position, delete signatures
+│   │   │   ├── collaborator/ # Team management
+│   │   │   └── audit-log/    # Activity trail
+│   │   ├── socket/
+│   │   │   └── server.js     # Standalone Socket.IO server (port 3001)
+│   │   └── index.ts          # Bootstrap — auto-configures permissions
+│   ├── public/
+│   │   └── favicon.png
 │   └── .env.example
-└── frontend/         # React 18 + Vite + MUI v7
+└── frontend/                 # React + Vite app
     ├── src/
-    │   ├── pages/    # Login, Register, Dashboard, Editor, Invite
+    │   ├── pages/            # Login, Register, Dashboard, Editor, Invite
     │   ├── components/
-    │   ├── store/    # Zustand (auth + document state)
-    │   └── services/ # Axios API + Socket.IO client
+    │   │   ├── editor/       # Quill collaborative editor, presence bar
+    │   │   ├── signature/    # Draw panel, draggable overlay
+    │   │   └── documents/    # Panels for team, versions, audit, invite
+    │   ├── store/            # Zustand stores (auth, documents)
+    │   └── services/         # Axios API + Socket.IO client
     └── .env.example
 ```
 
@@ -28,21 +56,21 @@ docusign-app/
 
 ## Prerequisites
 
-- **Node.js** 20–24 (required by Strapi v5)
+- **Node.js** v20–v24 (required by Strapi v5)
 - **npm** ≥ 6
 - A free [Cloudinary](https://cloudinary.com) account
-- (Optional) Gmail app password for email invites
+- (Optional) Gmail app password or SMTP credentials for email invites
 
 ---
 
-## Step 1 — Clone & Install
+## Step 1 — Install Dependencies
 
 ```bash
-# Install backend dependencies
+# Backend
 cd backend
 npm install
 
-# Install frontend dependencies
+# Frontend
 cd ../frontend
 npm install
 ```
@@ -58,27 +86,45 @@ cd backend
 cp .env.example .env
 ```
 
-Edit `backend/.env` and fill in:
+Open `backend/.env` and fill in every value:
 
-| Variable              | Description                        | Where to get it                                                                           |
-| --------------------- | ---------------------------------- | ----------------------------------------------------------------------------------------- |
-| `APP_KEYS`            | Two comma-separated random strings | `node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"` (run twice) |
-| `ADMIN_JWT_SECRET`    | 32+ char secret                    | Same command above                                                                        |
-| `API_TOKEN_SALT`      | 16+ char salt                      | Same command above                                                                        |
-| `TRANSFER_TOKEN_SALT` | Random string                      | Same command above                                                                        |
-| `JWT_SECRET`          | 32+ char secret for user JWTs      | Same command above                                                                        |
-| `CLOUDINARY_NAME`     | Your cloud name                    | [cloudinary.com/console](https://cloudinary.com/console)                                  |
-| `CLOUDINARY_KEY`      | API key                            | Same page                                                                                 |
-| `CLOUDINARY_SECRET`   | API secret                         | Same page                                                                                 |
-| `SMTP_USER`           | Your email                         | Gmail or any SMTP provider                                                                |
-| `SMTP_PASS`           | Gmail app password                 | [Google App Passwords](https://myaccount.google.com/apppasswords)                         |
-| `EMAIL_FROM`          | Sender email                       | Same as SMTP_USER                                                                         |
+```env
+# ── Server ───────────────────────────────────────────────────────────────
+HOST=0.0.0.0
+PORT=1337
+SOCKET_PORT=3001
+FRONTEND_URL=http://localhost:5173
 
-**Quick secret generator:**
+# ── Strapi secrets (generate each with the command below) ────────────────
+APP_KEYS=key1,key2
+ADMIN_JWT_SECRET=
+API_TOKEN_SALT=
+TRANSFER_TOKEN_SALT=
+JWT_SECRET=
+ENCRYPTION_KEY=
+
+# ── Cloudinary ────────────────────────────────────────────────────────────
+CLOUDINARY_NAME=
+CLOUDINARY_KEY=
+CLOUDINARY_SECRET=
+
+# ── Email / SMTP (optional — invites work without it) ────────────────────
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your@email.com
+SMTP_PASS=your_app_password
+EMAIL_FROM=your@email.com
+```
+
+**Generate secrets** — run this once for each secret field:
 
 ```bash
 node -e "console.log(require('crypto').randomBytes(32).toString('base64'))"
 ```
+
+**Cloudinary credentials** → https://cloudinary.com/console (free account, no credit card)
+
+**Gmail app password** → https://myaccount.google.com/apppasswords (requires 2FA enabled)
 
 ### Frontend
 
@@ -87,9 +133,9 @@ cd frontend
 cp .env.example .env
 ```
 
-The defaults work out-of-the-box for local development:
+The defaults work for local development:
 
-```
+```env
 VITE_API_URL=http://localhost:1337
 VITE_SOCKET_URL=http://localhost:3001
 ```
@@ -98,205 +144,255 @@ VITE_SOCKET_URL=http://localhost:3001
 
 ## Step 3 — Run the App
 
-You need **3 terminal windows**:
+You need **three terminal windows running simultaneously**:
 
-### To run all service at once
-
-in the project root folder run
-
-```bash
-./start.sh
-```
-
-### Terminal 1 — Strapi Backend
+### Terminal 1 — Strapi Backend (port 1337)
 
 ```bash
 cd backend
 npm run dev
 ```
 
-- Strapi admin: http://localhost:1337/admin
-- First run: Strapi will prompt you to create an admin account
-- API: http://localhost:1337/api
+### To start all services (frontend, backend and socket server) at once
 
-### Terminal 2 — Socket.IO Server
+In the root of the app, use
+
+```bash
+ ./start.sh
+```
+
+Wait until you see:
+
+```
+✔ Strapi started successfully
+┌──────────────────────────────────────┐
+│ http://localhost:1337/admin          │
+└──────────────────────────────────────┘
+```
+
+### Terminal 2 — Socket.IO Server (port 3001)
 
 ```bash
 cd backend
 node src/socket/server.js
 ```
 
-- Socket server runs on port **3001**
+You should see:
 
-### Terminal 3 — React Frontend
+```
+🔌 Socket.IO server listening on port 3001
+```
+
+### Terminal 3 — React Frontend (port 5173)
 
 ```bash
 cd frontend
 npm run dev
 ```
 
-- App: http://localhost:5173
+Open **http://localhost:5173** in your browser.
 
 ---
 
 ## Step 4 — First-Time Strapi Setup
 
-1. Open http://localhost:1337/admin
-2. Create your admin account (first time only)
-3. **Permissions are bootstrapped automatically** on startup via `src/index.ts`
+1. Open **http://localhost:1337/admin**
+2. Create your admin account (first run only)
+3. Permissions are **auto-configured on startup** via `src/index.ts`
 
-If you ever need to manually set permissions:
+### If auto-configuration didn't work (you see 403 errors):
 
-- Go to **Settings → Users & Permissions → Roles → Authenticated**
-- Enable all actions for: `document`, `signature`, `collaborator`, `audit-log`, `upload`
+Go to **Admin → Settings → Users & Permissions Plugin → Roles → Authenticated**
 
----
+Enable every checkbox under each of these sections, then click **Save**:
 
-## Step 5 — Cloudinary Plugin Install
+#### Document
 
-The backend needs the Cloudinary provider. Install it:
+| Permission     | Description                                  |
+| -------------- | -------------------------------------------- |
+| `find`         | List user's documents                        |
+| `findone`      | Open a single document                       |
+| `create`       | Create a new document                        |
+| `update`       | Save / autosave edits                        |
+| `delete`       | Delete a document                            |
+| `invite`       | Invite a collaborator by email               |
+| `acceptinvite` | Accept an invite link                        |
+| `versions`     | View version history                         |
+| `rollback`     | Restore a previous version                   |
+| `parsefile`    | Extract content from uploaded PDF/Word/image |
 
-```bash
-cd backend
-npm install @strapi/provider-upload-cloudinary
-```
+#### Signature
 
-Then add your Cloudinary credentials to `.env` and restart.
+| Permission        | Description                    |
+| ----------------- | ------------------------------ |
+| `create`          | Place a new signature          |
+| `findbydocument`  | Load signatures for a document |
+| `updateposition`  | Drag/resize a signature        |
+| `deletesignature` | Remove a signature             |
 
-> **Without Cloudinary:** The app still works — file uploads will fail, but document creation, editing, signing, and collaboration all function normally.
+#### Collaborator
+
+| Permission | Description                  |
+| ---------- | ---------------------------- |
+| `find`     | List collaborators           |
+| `update`   | Change a collaborator's role |
+| `delete`   | Remove a collaborator        |
+
+#### Audit-log
+
+| Permission       | Description             |
+| ---------------- | ----------------------- |
+| `findbydocument` | View the activity trail |
+
+#### Upload (under Plugins section)
+
+| Permission | Description                |
+| ---------- | -------------------------- |
+| `upload`   | Upload files to Cloudinary |
+| `find`     | Browse uploaded files      |
+| `findone`  | Fetch a single file        |
+| `destroy`  | Delete an uploaded file    |
 
 ---
 
 ## Features
 
-| Feature                                                        | Status |
-| -------------------------------------------------------------- | ------ |
-| User auth (register/login/JWT)                                 | ✅     |
-| Create / delete documents                                      | ✅     |
-| Real-time collaborative editing (Quill + Socket.IO delta sync) | ✅     |
-| Autosave with version history (last 20 versions)               | ✅     |
-| Version rollback                                               | ✅     |
-| Pen/draw signature with Fabric.js                              | ✅     |
-| Signature locking + audit trail                                | ✅     |
-| Invite by email with role-based access                         | ✅     |
-| Live presence (who is online / typing)                         | ✅     |
-| Real-time notifications                                        | ✅     |
-| File upload (PDF, Word, images) to Cloudinary                  | ✅     |
-| Audit log timeline                                             | ✅     |
-| Role system: viewer / editor / signer / admin                  | ✅     |
+### Authentication
+
+- Register and log in with email/password
+- JWT-based session stored in localStorage
+- Auto-redirect to login on session expiry
+
+### Document Management
+
+- Create blank documents from the dashboard
+- Upload PDF, Word (.doc/.docx), images (PNG/JPG/WebP), plain text — stored in Cloudinary
+- Delete documents (owner only)
+- Search documents by title on the dashboard
+
+### Real-Time Collaborative Editing
+
+- Multiple users can edit the same document simultaneously
+- Edits sync instantly using Socket.IO delta broadcasting (Quill OT)
+- Presence bar shows all online collaborators with colour-coded avatars
+- Typing indicator shows when someone is actively writing
+- Autosave triggers 3 seconds after the last keystroke
+- Manual save with **Ctrl+S** / **Cmd+S**
+
+### File-to-Editor Import
+
+When a file is uploaded, click **"Load into editor"** in the attachment bar:
+
+- **Digital PDF** → text extracted by `pdf-parse`, loaded as editable paragraphs
+- **Scanned PDF** → pages rendered to images by `pdfjs-dist`, OCR via `tesseract.js`
+- **Word .docx** → converted to formatted HTML by `mammoth`
+- **Images** → OCR via `tesseract.js` + inline preview
+- **Plain text** → loaded as paragraphs
+- Extracted content is fully editable and autosaved immediately
+
+### Signatures
+
+- Draw a freehand signature using mouse or touchscreen
+- Size slider (80–400px) to choose signature size before placing
+- Click **Place on document** to add the signature to the document canvas
+- **Drag** any placed signature to reposition it anywhere on the page
+- **Resize** by dragging the square handle in the bottom-right corner
+- **Delete** by clicking the signature to select it, then clicking the red ✕ button
+- All signatures are locked with signer name, email, timestamp, and IP address
+- Only the original signer can move, resize, or delete their own signature
+- Signatures sync in real time to all collaborators via Socket.IO
+
+### Access Control & Collaboration
+
+- **Invite by email** — owner sends email invite with a role
+- **Share link** — copy/paste the invite URL for instant access
+- Four roles:
+  - `viewer` — read-only access
+  - `editor` — can edit text
+  - `signer` — can sign but not edit text
+  - `admin` — full access including inviting others
+- Owner can change roles and remove collaborators from the Team panel
+
+### Version History
+
+- Every save creates a new version snapshot (last 20 kept)
+- Versions panel shows timestamp and author for each version
+- One-click **Restore** to roll back to any previous version
+
+### Audit Trail
+
+- Every action is logged: created, viewed, edited, signed, invited, joined, rolled back
+- Timeline view in the Audit panel with actor, action, and timestamp
+
+### Notifications
+
+- Real-time slide-in toasts when a collaborator joins, leaves, or signs
 
 ---
 
 ## Testing the App
 
-### 1. Register & Login
+### 1. Register two accounts
 
-- Open http://localhost:5173
-- Register two accounts (open two browser tabs or use incognito)
+Open **http://localhost:5173/register** in a normal window and an incognito window to create two separate users.
 
-### 2. Create a Document
+### 2. Create a document
 
-- Click **New doc**, give it a title
-- You're taken to the editor
+Log in as User 1 → click **New doc** → enter a title → you're taken to the editor.
 
-### 3. Real-Time Collaboration
+### 3. Test real-time collaboration
 
-- In the second tab (logged in as user 2), open the same document URL
-- Both users should see each other in the **presence bar** (top right)
-- Type in one tab — it syncs to the other in real time
+- Copy the document URL
+- In the incognito window (User 2), open the same URL
+- **User 1 must invite User 2 first**: click **Invite**, enter User 2's email, set role to `editor`
+- User 2 accepts the invite link
+- Both users should now see each other in the presence bar
+- Type in one window — text appears live in the other
 
-### 4. Invite a Collaborator
+### 4. Test signatures
 
-- Click **Invite** in the top bar
-- Enter user 2's email, set role to **editor**
-- Or copy the invite link and open it in the second tab
+- Open the **Sign** tab (right panel) or click the ✏ icon in the top bar
+- Draw a signature with your mouse
+- Use the size slider to adjust size
+- Click **Place on document**
+- The signature appears on the document — drag it to reposition, resize with the corner handle
+- Click the signature to select it → red ✕ button appears to delete it
 
-### 5. Sign a Document
-
-- Click the **✏ Draw** icon in the top bar (or **Sign** tab in the side panel)
-- Draw a signature with your mouse/stylus
-- Click **Apply signature**
-- The signature appears in the panel and syncs to all collaborators
-
-### 6. Version History
-
-- Make several edits to the document
-- Open the side panel → **Versions** tab
-- Click **Restore** on any previous version
-
-### 7. Upload a File
+### 5. Upload and parse a file
 
 - On the dashboard, click **Upload**
-- Drop a PDF or image
-- The file is stored in Cloudinary and linked to the document
+- Drop a PDF or Word file
+- In the editor, click **Load into editor** in the grey bar at the top
+- The file content is extracted and loaded into Quill as editable text
+
+### 6. Version history
+
+- Make several edits (each autosave creates a version)
+- Open the **Versions** tab → click **Restore** on an older version
 
 ---
-
-### media
-
-![login page](./frontend/assets/login.png)
-![register page](./frontend/assets/register.png)
-![Doc owner page](./frontend/assets/doc-owner-page.png)
-![showing real time collaboration on bother owner and user sides](./frontend/assets/real-time-collaboration.png)
 
 ## Common Issues
 
-### `Cannot find module '@strapi/provider-upload-cloudinary'`
-
-```bash
-cd backend && npm install @strapi/provider-upload-cloudinary
-```
-
-### Port 1337 or 3001 already in use
-
-```bash
-# Find and kill the process
-lsof -ti:1337 | xargs kill -9
-lsof -ti:3001 | xargs kill -9
-```
-
-### Socket not connecting
-
-- Confirm terminal 2 shows "Socket.IO server listening on port 3001"
-- Check `VITE_SOCKET_URL=http://localhost:3001` in `frontend/.env`
-
-### Strapi permissions errors (403)
-
-- Go to http://localhost:1337/admin → Settings → Users & Permissions → Roles → Authenticated
-- Enable all permissions for the `document`, `signature`, `collaborator`, `audit-log` APIs
-
-### Email invites not sending
-
-- Email is **non-fatal** — the invite collaborator record is still created
-- Check SMTP credentials in `.env`
-- For Gmail: enable 2FA and use an [App Password](https://myaccount.google.com/apppasswords)
+| Problem                           | Fix                                                                                                        |
+| --------------------------------- | ---------------------------------------------------------------------------------------------------------- |
+| `403 Forbidden` on any API call   | Go to Strapi Admin → Settings → Users & Permissions → Authenticated → enable all listed permissions → Save |
+| `ENOENT: favicon.png` in terminal | Copy `backend/public/favicon.png` — it's included in the project                                           |
+| Socket not connecting             | Make sure Terminal 2 is running: `node src/socket/server.js`                                               |
+| Upload fails with 401             | Check `CLOUDINARY_NAME`, `CLOUDINARY_KEY`, `CLOUDINARY_SECRET` in `backend/.env`                           |
+| "Load into editor" fails          | Install parsing dependencies: `cd backend && npm install pdf-parse pdfjs-dist mammoth tesseract.js`        |
+| Autosave 500 error                | Restart Strapi — the `versions` JSON field may need a fresh migration                                      |
+| Double toolbar in editor          | Make sure you replaced `main.jsx` — `React.StrictMode` must be removed                                     |
+| Permissions lost after restart    | The bootstrap in `src/index.ts` re-applies them on every start                                             |
 
 ---
 
-## Production Deployment Notes
+## Production Notes
 
-1. Set all `*.env` secrets to strong, unique values
-2. Replace SQLite with PostgreSQL (`DATABASE_CLIENT=postgres`)
-3. Run Strapi with `npm run build && npm start`
-4. Serve the Socket.IO server with PM2 or a process manager
-5. Build the frontend: `npm run build` → serve the `dist/` folder
-6. Set `FRONTEND_URL` in backend `.env` to your production domain
-7. Configure CORS in `config/middlewares.ts` for your domain
-
----
-
-## Tech Stack
-
-| Layer        | Technology                       |
-| ------------ | -------------------------------- |
-| Backend API  | Strapi v5 (TypeScript)           |
-| Database     | SQLite (dev) / PostgreSQL (prod) |
-| File Storage | Cloudinary                       |
-| Real-Time    | Socket.IO v4                     |
-| Frontend     | React 18 + Vite                  |
-| UI           | MUI v7 + Emotion                 |
-| State        | Zustand                          |
-| Rich Text    | Quill v2                         |
-| Signature    | Fabric.js v6                     |
-| HTTP Client  | Axios                            |
-| Routing      | React Router v6                  |
+1. Replace all secret values in `.env` with strong random strings
+2. Switch `DATABASE_CLIENT` from `sqlite` to `postgres` and add database credentials
+3. Build Strapi: `cd backend && npm run build && npm start`
+4. Build the frontend: `cd frontend && npm run build` → serve the `dist/` folder
+5. Run the Socket.IO server with a process manager (PM2, systemd)
+6. Set `FRONTEND_URL` in `backend/.env` to your production domain
+7. Update CORS origins in `backend/config/middlewares.ts`

@@ -53,7 +53,7 @@ export default factories.createCoreController('api::signature.signature', ({ str
     return ctx.send({ data: signature });
   },
 
-  // Update position/size — only the signer can move their own signature
+  // Update position/size — only the original signer can move their own signature
   async updateposition(ctx) {
     const user = ctx.state.user;
     if (!user) return ctx.unauthorized();
@@ -65,8 +65,6 @@ export default factories.createCoreController('api::signature.signature', ({ str
       populate: ['signer'],
     });
     if (!sig) return ctx.notFound();
-
-    // Only the original signer can reposition
     if ((sig as any).signer?.id !== user.id) {
       return ctx.forbidden('Only the signer can reposition their signature');
     }
@@ -83,10 +81,57 @@ export default factories.createCoreController('api::signature.signature', ({ str
     return ctx.send({ data: updated });
   },
 
-  async findbydocument(ctx) {
+  // Delete — only the original signer can remove their own signature
+  async deletesignature(ctx) {
     const user = ctx.state.user;
     if (!user) return ctx.unauthorized();
 
+    const { id } = ctx.params;
+
+    const sig = await strapi.entityService.findOne('api::signature.signature', id, {
+      populate: ['signer', 'document'],
+    });
+    if (!sig) return ctx.notFound();
+
+    // Only the signer themselves (or document owner) can delete a signature
+    const isOwnSig    = (sig as any).signer?.id === user.id;
+    const docOwnerId  = (sig as any).document?.owner?.id;
+
+    // Fetch doc owner if not populated
+    let isDocOwner = false;
+    if (!docOwnerId && (sig as any).document?.id) {
+      const doc = await strapi.entityService.findOne('api::document.document', (sig as any).document.id, {
+        populate: ['owner'],
+      });
+      isDocOwner = (doc as any)?.owner?.id === user.id;
+    } else {
+      isDocOwner = docOwnerId === user.id;
+    }
+
+    if (!isOwnSig && !isDocOwner) {
+      return ctx.forbidden('Only the signer or document owner can remove a signature');
+    }
+
+    await strapi.entityService.delete('api::signature.signature', id);
+
+    strapi.entityService.create('api::audit-log.audit-log', {
+      data: {
+        action:    'edited',
+        actorEmail: user.email,
+        actorName:  user.username,
+        document:  (sig as any).document?.id,
+        actor:     user.id,
+        metadata:  { deletedSignatureId: id },
+        ipAddress: ctx.request.ip,
+      },
+    }).catch(() => {});
+
+    return ctx.send({ data: { deleted: true, id } });
+  },
+
+  async findbydocument(ctx) {
+    const user = ctx.state.user;
+    if (!user) return ctx.unauthorized();
     const { documentId } = ctx.params;
 
     const signatures = await strapi.entityService.findMany('api::signature.signature', {
@@ -98,10 +143,4 @@ export default factories.createCoreController('api::signature.signature', ({ str
     return ctx.send({ data: signatures });
   },
 }));
-
-
-
-
-
-
 

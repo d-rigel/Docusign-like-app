@@ -49,7 +49,8 @@ export const signaturesAPI = {
   create:         (data)       => api.post('/signatures', data),
   byDocument:     (documentId) => api.get(`/signatures/document/${documentId}`),
   // Update position/size of a placed signature
-  updatePosition: (id, data)   => api.put(`/signatures/${id}/position`, data),
+  updatePosition:  (id, data)   => api.put(`/signatures/${id}/position`, data),
+  remove:          (id)          => api.delete(`/signatures/${id}`),
 };
 
 export const collaboratorsAPI = {
@@ -72,4 +73,6 @@ export const uploadAPI = {
 };
 
 export default api;
+
+
 

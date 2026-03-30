@@ -51,6 +51,7 @@ export default {
         'api::signature.signature.create',
         'api::signature.signature.findbydocument',
         'api::signature.signature.updateposition',
+        'api::signature.signature.deletesignature',
         // Collaborators
         'api::collaborator.collaborator.find',
         'api::collaborator.collaborator.update',
@@ -105,7 +106,6 @@ export default {
     }
   },
 };
-
 
 
 

@@ -399,6 +399,7 @@ export default function EditorPage() {
                   documentId={id}
                   canEdit={canEdit}
                   currentUser={user}
+                  socket={socketRef.current}
                 />
               )}
               {docReady ? (
@@ -464,3 +465,5 @@ export default function EditorPage() {
     </Box>
   );
 }
+
+
